@@ -442,3 +442,30 @@
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
+
+/* ── App shell (shell-v2) ─────────────────────────────────────────────
+   The Canvas app owns its whole content rect: a left rail (the canvas list)
+   and a main pane (one board), composed with the app-kit Split. */
+.canvas-app {
+  height: 100%;
+  width: 100%;
+}
+
+.canvas-sidebar-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.canvas-new-btn {
+  width: 100%;
+}
+
+.canvas-empty-pane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
