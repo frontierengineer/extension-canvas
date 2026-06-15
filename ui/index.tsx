@@ -1,85 +1,126 @@
-import { useEffect } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import type { UiV1, UiProvider, ViewContext } from '../../types';
+import { useCallback, useEffect, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { AppSidebar, Split } from '@frontierengineer/ui';
+import type { UiV1, UiProvider, AppHost } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
 import { initCanvas, useCanvasList, useCanvasListRaw } from './useCanvasStore';
 import { DEFAULT_CANVAS_ID } from './constants';
 import './styles.css';
 
-// Pushes this canvas tab's label to the host via ctx.setLabel — on mount and
-// whenever the canvas's name changes (a rename). Replaces the old pull-based
-// tabLabel(); renders nothing.
-function CanvasTabLabel({ canvasId, ctx }: { canvasId: string; ctx: ViewContext }) {
-  const name = useCanvasList((api) => api.list.find((c) => c.id === canvasId)?.name);
+// ─────────────────────────────────────────────────────────────────────
+// The Canvas app (shell-v2). ONE ui.app.register that owns the whole content
+// rect: a left rail listing the canvases (with a New Canvas action) and a main
+// pane holding one infinite whiteboard. There is no host tab bar — the app holds
+// the selected canvas in its own state and swaps the board in the main pane. The
+// sidebar + canvas components are re-housed verbatim; only their wiring (route
+// navigation → app selection) changed.
+// ─────────────────────────────────────────────────────────────────────
+
+// The whole Canvas app. Holds the selected canvas id; the sidebar selects, the
+// main pane renders. `ui` is the controller realm's UiV1 (for host-rendered
+// modals); `host` is the app's AppHost (its container, substrate, lifecycle).
+function CanvasApp({ ui, host }: { ui: UiV1; host: AppHost }) {
+  const list = useCanvasList((a) => a.list);
+  const loaded = useCanvasList((a) => a.loaded);
+
+  // Default to the always-present default canvas once the list loads, so the
+  // app opens onto a board rather than an empty pane.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   useEffect(() => {
-    ctx.setLabel({ primary: 'Canvas', secondary: name || (canvasId === DEFAULT_CANVAS_ID ? 'Canvas' : canvasId) });
-  }, [name, canvasId, ctx]);
-  return null;
+    if (selectedId === null && loaded) setSelectedId(DEFAULT_CANVAS_ID);
+  }, [selectedId, loaded]);
+
+  // The sidebar still calls navigate('/canvas/<id>') — keep the component
+  // verbatim and translate the route into app selection here.
+  const select = useCallback((path: string) => {
+    const id = path.startsWith('/canvas/') ? path.slice('/canvas/'.length) : path;
+    if (id) setSelectedId(id);
+  }, []);
+
+  // If the open canvas is deleted from the list, fall back to the default board
+  // instead of rendering a dead canvas.
+  useEffect(() => {
+    if (selectedId && loaded && !list.some((c) => c.id === selectedId)) setSelectedId(DEFAULT_CANVAS_ID);
+  }, [selectedId, loaded, list]);
+
+  // Refresh the canvas list on COMMIT (the user switched here), per the warm-keep
+  // lifecycle — a canvas may have been created/deleted elsewhere while this app
+  // was hidden. A peek is a glance and takes no such side effect.
+  useEffect(() => host.lifecycle.onActivate(() => { void useCanvasListRaw().fetchList(); }), [host]);
+
+  const sidebar = (
+    <AppSidebar
+      header={<div className="canvas-sidebar-title">Canvases</div>}
+      footer={
+        <button
+          className="btn-secondary btn-sm canvas-new-btn"
+          onClick={() => { void showNewCanvasModal(ui, setSelectedId); }}
+        >
+          New Canvas
+        </button>
+      }
+    >
+      <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => ui.modals.confirm(o)} />
+    </AppSidebar>
+  );
+
+  const main = selectedId ? (
+    <CanvasView key={selectedId} canvasId={selectedId} />
+  ) : (
+    <div className="canvas-empty-pane">Loading…</div>
+  );
+
+  return (
+    <div className="canvas-app">
+      <Split
+        first={sidebar}
+        second={main}
+        initialFirstSize={240}
+        minFirstSize={170}
+        minSecondSize={360}
+        storageKey="canvas.split"
+      />
+    </div>
+  );
 }
 
 export function register(uiProvider: UiProvider): void {
   const ui = uiProvider.version(1);
   initCanvas(ui.services.store);
 
-  const viewRoots = new Map<HTMLElement, Root>();
-  let sidebarRoot: Root | null = null;
-
   ui.commands.register({
     id: 'canvas.new',
     label: 'New Canvas',
     category: 'Canvas',
     defaultKey: 'Alt+C',
+    group: 'create',
+    // The create command runs in the controller realm, which has no openApp — a
+    // palette/Home invocation can't itself switch the shell to the Canvas app.
+    // It opens the host-rendered modal and creates the canvas; the new canvas
+    // appears in the rail once the Canvas app is shown. The in-app New Canvas
+    // button takes the richer path (a select callback) so the fresh canvas opens
+    // in the main pane immediately.
     run: () => { void showNewCanvasModal(ui); },
   });
 
-  ui.sidebar.register({
-    id: 'canvas-list',
-    title: 'Canvases',
-    actions: [{ commandId: 'canvas.new', icon: '+', tooltip: 'New Canvas' }],
-    mount(container) {
-      sidebarRoot = createRoot(container);
-      sidebarRoot.render(<CanvasSidebar navigate={(p, o) => ui.navigate(p, o)} confirm={(o) => ui.modals.confirm(o)} />);
-    },
-    unmount() {
-      sidebarRoot?.unmount();
-      sidebarRoot = null;
-    },
-  });
-
-  ui.views.register({
+  // ONE app per extension — the whole canvas experience lives inside this mount.
+  let root: ReturnType<typeof createRoot> | null = null;
+  ui.app.register({
     id: 'canvas',
-    tabType: 'canvas',
-    // `/canvas/<id>` → canvas:<id>. Every entry point navigates with a concrete
-    // id (the welcome tile + sidebar use DEFAULT_CANVAS_ID), so one prefix route
-    // covers it — no bare `/canvas` form to special-case.
-    routes: [{ prefix: '/canvas/' }],
-    mount(tabId, container, ctx) {
-      const root = createRoot(container);
-      const canvasId = tabId.slice('canvas:'.length);
-      root.render(
-        <>
-          <CanvasTabLabel canvasId={canvasId} ctx={ctx} />
-          <CanvasView canvasId={canvasId} />
-        </>,
-      );
-      viewRoots.set(container, root);
+    title: 'Canvas',
+    // An infinite-canvas glyph: a framed board with a couple of nodes.
+    icon: 'M2 3.5h12v9H2zM5 6.5h3v2H5zM9.5 8.5h2.5v2H9.5z',
+    color: '#6366f1',
+    mount(host: AppHost) {
+      root = createRoot(host.container);
+      root.render(<CanvasApp ui={ui} host={host} />);
+      return () => { root?.unmount(); root = null; };
     },
-    unmount(container) {
-      viewRoots.get(container)?.unmount();
-      viewRoots.delete(container);
-    },
-  });
-
-  ui.welcome.contribute({
-    id: 'canvas-open',
-    title: 'Open Canvas',
-    description: 'Open the visual whiteboard canvas for spatial planning.',
-    action: { label: 'Open Canvas', run: () => ui.navigate(`/canvas/${DEFAULT_CANVAS_ID}`) },
   });
 }
 
-async function showNewCanvasModal(ui: UiV1): Promise<void> {
+async function showNewCanvasModal(ui: UiV1, onCreated?: (canvasId: string) => void): Promise<void> {
   const result = await ui.modals.prompt({
     title: 'New Canvas',
     fields: [{ key: 'name', label: 'Name', type: 'string', placeholder: 'My Canvas', required: true }],
@@ -88,7 +129,7 @@ async function showNewCanvasModal(ui: UiV1): Promise<void> {
   if (!result) return;
   try {
     const info = await useCanvasListRaw().createCanvas(result.name);
-    ui.navigate(`/canvas/${info.id}`);
+    onCreated?.(info.id);
   } catch (err) {
     console.error('[canvas] create failed:', err);
   }
