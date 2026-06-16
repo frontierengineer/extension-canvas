@@ -17,4 +17,4 @@ Canvas gives you an endless, zoomable space to think on. Drop post-it notes anyw
 
 ## Install
 
-Install Canvas from the **Extensions → Marketplace** tab in Frontier: find Canvas, click Install, and the Canvas tab and sidebar appear (Frontier verifies the download before installing). No configuration needed.
+Install Canvas from the **Applications → Marketplace** tab in Frontier: find Canvas, click Install, and the Canvas tab and sidebar appear (Frontier verifies the download before installing). No configuration needed.

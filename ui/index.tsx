@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AppSidebar, Split } from '@frontierengineer/ui';
-import type { UiV1, UiProvider, AppHost } from '../../types';
+import { ApplicationSidebar, Split } from '@frontierengineer/ui';
+import type { UiV1, UiProvider, ApplicationHost } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
 import { initCanvas, useCanvasList, useCanvasListRaw } from './useCanvasStore';
@@ -9,18 +9,19 @@ import { DEFAULT_CANVAS_ID } from './constants';
 import './styles.css';
 
 // ─────────────────────────────────────────────────────────────────────
-// The Canvas app (shell-v2). ONE ui.app.register that owns the whole content
-// rect: a left rail listing the canvases (with a New Canvas action) and a main
-// pane holding one infinite whiteboard. There is no host tab bar — the app holds
-// the selected canvas in its own state and swaps the board in the main pane. The
-// sidebar + canvas components are re-housed verbatim; only their wiring (route
-// navigation → app selection) changed.
+// The Canvas application (shell-v2). ONE ui.application.register that owns the
+// whole content rect: a left rail listing the canvases (with a New Canvas action)
+// and a main pane holding one infinite whiteboard. There is no host tab bar — the
+// application holds the selected canvas in its own state and swaps the board in
+// the main pane. The sidebar + canvas components are re-housed verbatim; only
+// their wiring (route navigation → application selection) changed.
 // ─────────────────────────────────────────────────────────────────────
 
-// The whole Canvas app. Holds the selected canvas id; the sidebar selects, the
-// main pane renders. `ui` is the controller realm's UiV1 (for host-rendered
-// modals); `host` is the app's AppHost (its container, substrate, lifecycle).
-function CanvasApp({ ui, host }: { ui: UiV1; host: AppHost }) {
+// The whole Canvas application. Holds the selected canvas id; the sidebar
+// selects, the main pane renders. `ui` is the controller realm's UiV1 (for
+// host-rendered modals); `host` is the application's ApplicationHost (its
+// container, substrate, lifecycle).
+function CanvasApp({ ui, host }: { ui: UiV1; host: ApplicationHost }) {
   const list = useCanvasList((a) => a.list);
   const loaded = useCanvasList((a) => a.loaded);
 
@@ -50,7 +51,7 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: AppHost }) {
   useEffect(() => host.lifecycle.onActivate(() => { void useCanvasListRaw().fetchList(); }), [host]);
 
   const sidebar = (
-    <AppSidebar
+    <ApplicationSidebar
       header={<div className="canvas-sidebar-title">Canvases</div>}
       footer={
         <button
@@ -62,7 +63,7 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: AppHost }) {
       }
     >
       <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => ui.modals.confirm(o)} />
-    </AppSidebar>
+    </ApplicationSidebar>
   );
 
   const main = selectedId ? (
@@ -95,24 +96,25 @@ export function register(uiProvider: UiProvider): void {
     category: 'Canvas',
     defaultKey: 'Alt+C',
     group: 'create',
-    // The create command runs in the controller realm, which has no openApp — a
-    // palette/Home invocation can't itself switch the shell to the Canvas app.
-    // It opens the host-rendered modal and creates the canvas; the new canvas
-    // appears in the rail once the Canvas app is shown. The in-app New Canvas
-    // button takes the richer path (a select callback) so the fresh canvas opens
-    // in the main pane immediately.
+    // The create command runs in the controller realm, which has no
+    // openApplication — a palette/Home invocation can't itself switch the shell
+    // to the Canvas application. It opens the host-rendered modal and creates the
+    // canvas; the new canvas appears in the rail once the Canvas application is
+    // shown. The in-application New Canvas button takes the richer path (a select
+    // callback) so the fresh canvas opens in the main pane immediately.
     run: () => { void showNewCanvasModal(ui); },
   });
 
-  // ONE app per extension — the whole canvas experience lives inside this mount.
+  // ONE application content surface — the whole canvas experience lives inside
+  // this mount.
   let root: ReturnType<typeof createRoot> | null = null;
-  ui.app.register({
+  ui.application.register({
     id: 'canvas',
     title: 'Canvas',
     // An infinite-canvas glyph: a framed board with a couple of nodes.
     icon: 'M2 3.5h12v9H2zM5 6.5h3v2H5zM9.5 8.5h2.5v2H9.5z',
     color: '#6366f1',
-    mount(host: AppHost) {
+    mount(host: ApplicationHost) {
       root = createRoot(host.container);
       root.render(<CanvasApp ui={ui} host={host} />);
       return () => { root?.unmount(); root = null; };
