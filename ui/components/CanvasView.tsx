@@ -227,7 +227,7 @@ export function CanvasView({ canvasId = DEFAULT_CANVAS_ID }: { canvasId?: string
   // Drop handler: accepts a UID via custom MIME type and places a postit.
   const onDrop = (e: React.DragEvent) => {
     if (!rootRef.current) return;
-    const uid = e.dataTransfer.getData('application/x-frontier-uid');
+    const uid = e.dataTransfer.getData('extension/x-frontier-uid');
     if (!uid) return;
     e.preventDefault();
     e.stopPropagation();
@@ -245,7 +245,7 @@ export function CanvasView({ canvasId = DEFAULT_CANVAS_ID }: { canvasId?: string
     });
   };
   const onDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-frontier-uid')) {
+    if (e.dataTransfer.types.includes('extension/x-frontier-uid')) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
     }

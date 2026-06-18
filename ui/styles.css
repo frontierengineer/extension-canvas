@@ -443,9 +443,9 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
-/* ── Application shell (shell-v2) ─────────────────────────────────────
-   The Canvas application owns its whole content rect: a left rail (the canvas
-   list) and a main pane (one board), composed with the application-kit Split. */
+/* ── Extension shell (shell-v2) ─────────────────────────────────────
+   The Canvas extension owns its whole content rect: a left rail (the canvas
+   list) and a main pane (one board), composed with the extension-kit Split. */
 .canvas-app {
   height: 100%;
   width: 100%;

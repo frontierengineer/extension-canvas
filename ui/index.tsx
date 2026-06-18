@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ApplicationSidebar, Split } from '@frontierengineer/ui';
-import type { UiV1, UiProvider, ApplicationHost } from '../../types';
+import { ExtensionSidebar, Split } from '@frontierengineer/ui';
+import type { UiV1, UiProvider, ExtensionHost } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
 import { initCanvas, useCanvasList, useCanvasListRaw } from './useCanvasStore';
@@ -9,19 +9,19 @@ import { DEFAULT_CANVAS_ID } from './constants';
 import './styles.css';
 
 // ─────────────────────────────────────────────────────────────────────
-// The Canvas application (shell-v2). ONE ui.application.register that owns the
+// The Canvas extension (shell-v2). ONE ui.extension.register that owns the
 // whole content rect: a left rail listing the canvases (with a New Canvas action)
 // and a main pane holding one infinite whiteboard. There is no host tab bar — the
-// application holds the selected canvas in its own state and swaps the board in
+// extension holds the selected canvas in its own state and swaps the board in
 // the main pane. The sidebar + canvas components are re-housed verbatim; only
-// their wiring (route navigation → application selection) changed.
+// their wiring (route navigation → extension selection) changed.
 // ─────────────────────────────────────────────────────────────────────
 
-// The whole Canvas application. Holds the selected canvas id; the sidebar
+// The whole Canvas extension. Holds the selected canvas id; the sidebar
 // selects, the main pane renders. `ui` is the controller realm's UiV1 (for
-// host-rendered modals); `host` is the application's ApplicationHost (its
+// host-rendered modals); `host` is the extension's ExtensionHost (its
 // container, substrate, lifecycle).
-function CanvasApp({ ui, host }: { ui: UiV1; host: ApplicationHost }) {
+function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
   const list = useCanvasList((a) => a.list);
   const loaded = useCanvasList((a) => a.loaded);
 
@@ -51,7 +51,7 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ApplicationHost }) {
   useEffect(() => host.lifecycle.onActivate(() => { void useCanvasListRaw().fetchList(); }), [host]);
 
   const sidebar = (
-    <ApplicationSidebar
+    <ExtensionSidebar
       header={<div className="canvas-sidebar-title">Canvases</div>}
       footer={
         <button
@@ -63,7 +63,7 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ApplicationHost }) {
       }
     >
       <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => ui.modals.confirm(o)} />
-    </ApplicationSidebar>
+    </ExtensionSidebar>
   );
 
   const main = selectedId ? (
@@ -97,24 +97,24 @@ export function register(uiProvider: UiProvider): void {
     defaultKey: 'Alt+C',
     group: 'create',
     // The create command runs in the controller realm, which has no
-    // openApplication — a palette/Home invocation can't itself switch the shell
-    // to the Canvas application. It opens the host-rendered modal and creates the
-    // canvas; the new canvas appears in the rail once the Canvas application is
-    // shown. The in-application New Canvas button takes the richer path (a select
+    // openExtension — a palette/Home invocation can't itself switch the shell
+    // to the Canvas extension. It opens the host-rendered modal and creates the
+    // canvas; the new canvas appears in the rail once the Canvas extension is
+    // shown. The in-extension New Canvas button takes the richer path (a select
     // callback) so the fresh canvas opens in the main pane immediately.
     run: () => { void showNewCanvasModal(ui); },
   });
 
-  // ONE application content surface — the whole canvas experience lives inside
+  // ONE extension content surface — the whole canvas experience lives inside
   // this mount.
   let root: ReturnType<typeof createRoot> | null = null;
-  ui.application.register({
+  ui.extension.register({
     id: 'canvas',
     title: 'Canvas',
     // An infinite-canvas glyph: a framed board with a couple of nodes.
     icon: 'M2 3.5h12v9H2zM5 6.5h3v2H5zM9.5 8.5h2.5v2H9.5z',
     color: '#6366f1',
-    mount(host: ApplicationHost) {
+    mount(host: ExtensionHost) {
       root = createRoot(host.container);
       root.render(<CanvasApp ui={ui} host={host} />);
       return () => { root?.unmount(); root = null; };
