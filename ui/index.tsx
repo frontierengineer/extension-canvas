@@ -9,7 +9,7 @@ import { DEFAULT_CANVAS_ID } from './constants';
 import './styles.css';
 
 // ─────────────────────────────────────────────────────────────────────
-// The Canvas extension (shell-v2). ONE ui.extension.register that owns the
+// The Canvas extension (shell-v2). ONE ui.application.register that owns the
 // whole content rect: a left rail listing the canvases (with a New Canvas action)
 // and a main pane holding one infinite whiteboard. There is no host tab bar — the
 // extension holds the selected canvas in its own state and swaps the board in
@@ -108,7 +108,7 @@ export function register(uiProvider: UiProvider): void {
   // ONE extension content surface — the whole canvas experience lives inside
   // this mount.
   let root: ReturnType<typeof createRoot> | null = null;
-  ui.extension.register({
+  ui.application.register({
     id: 'canvas',
     title: 'Canvas',
     // An infinite-canvas glyph: a framed board with a couple of nodes.
