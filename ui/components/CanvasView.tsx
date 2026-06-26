@@ -333,14 +333,24 @@ export function CanvasView({ canvasId = DEFAULT_CANVAS_ID }: { canvasId?: string
     return out;
   }, [positionedUids, layout.spaces, layout.viewport, rootSize]);
 
+  // New items land at the centre of what you're looking at — but cascade each
+  // one down-right off the last so repeated clicks don't pile up into a single
+  // indistinguishable stack. The step wraps every 8 so the cascade can't march
+  // a fresh item off-screen.
+  const cascadeOffset = () => {
+    const step = layout.areas.length % 8;
+    return step * 26;
+  };
+
   const handleAddArea = () => {
     if (!rootRef.current) return;
     const rect = rootRef.current.getBoundingClientRect();
     const centre = clientToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2, rect, layout.viewport);
     const color = AREA_PALETTE[layout.areas.length % AREA_PALETTE.length];
+    const off = cascadeOffset();
     addArea({
       id: newAreaId(),
-      x: centre.x - 160, y: centre.y - 120,
+      x: centre.x - 160 + off, y: centre.y - 120 + off,
       width: 320, height: 240,
       zIndex: 0,
       label: 'New area',
@@ -354,9 +364,10 @@ export function CanvasView({ canvasId = DEFAULT_CANVAS_ID }: { canvasId?: string
     const rect = rootRef.current.getBoundingClientRect();
     const centre = clientToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2, rect, layout.viewport);
     const color = AREA_PALETTE[layout.areas.length % AREA_PALETTE.length];
+    const off = cascadeOffset();
     addArea({
       id: newAreaId(),
-      x: centre.x - 70, y: centre.y - 50,
+      x: centre.x - 70 + off, y: centre.y - 50 + off,
       width: 140, height: 100,
       zIndex: 0,
       label: 'New sticky',
