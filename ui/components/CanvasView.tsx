@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCanvasStore, useCanvasList } from '../useCanvasStore';
 import { CanvasIdContext } from './CanvasContext';
-import { DEFAULT_CANVAS_ID } from '../constants';
 import type { CanvasSpaceLayout } from '../types';
 import { Postit } from './Postit';
 import { Area } from './Area';
@@ -109,7 +108,7 @@ function CanvasToolbarTitle({
   );
 }
 
-export function CanvasView({ canvasId = DEFAULT_CANVAS_ID }: { canvasId?: string }) {
+export function CanvasView({ canvasId }: { canvasId: string }) {
   const list = useCanvasList((a) => a.list);
   const listLoaded = useCanvasList((a) => a.loaded);
   const fetchList = useCanvasList((a) => a.fetchList);
@@ -130,7 +129,7 @@ export function CanvasView({ canvasId = DEFAULT_CANVAS_ID }: { canvasId?: string
   const draggingUid = useCanvasStore(canvasId, (s) => s.draggingUid);
   const draggingAreaId = useCanvasStore(canvasId, (s) => s.draggingAreaId);
   const canvasInfo = list.find((c) => c.id === canvasId);
-  const canvasName = canvasInfo?.name || (canvasId === DEFAULT_CANVAS_ID ? 'Canvas' : canvasId);
+  const canvasName = canvasInfo?.name || canvasId;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);

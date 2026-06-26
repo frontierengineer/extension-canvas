@@ -1,6 +1,6 @@
 import type { Store } from '../../types';
 import type { CanvasLayout, CanvasLayoutPatch, CanvasInfo, CanvasEntityValue, CanvasMeta } from './types';
-import { DEFAULT_CANVAS_LAYOUT, DEFAULT_CANVAS_ID } from './constants';
+import { DEFAULT_CANVAS_LAYOUT } from './constants';
 
 const layoutKey = (id: string) => `canvases/${id}/layout.json`;
 const metaKey = (id: string) => `canvases/${id}/meta.json`;
@@ -32,14 +32,7 @@ async function writeLayout(store: Store, id: string, layout: CanvasLayout): Prom
   await store.put(layoutKey(id), JSON.stringify(layout, null, 2));
 }
 
-async function ensureDefaultCanvas(store: Store): Promise<void> {
-  if (await store.get(metaKey(DEFAULT_CANVAS_ID))) return;
-  await writeMeta(store, DEFAULT_CANVAS_ID, { name: 'Canvas' });
-  await writeLayout(store, DEFAULT_CANVAS_ID, { ...DEFAULT_CANVAS_LAYOUT });
-}
-
 export async function listCanvases(store: Store): Promise<CanvasInfo[]> {
-  await ensureDefaultCanvas(store);
   const ids = new Set<string>();
   for (const key of await store.list('canvases')) {
     const parts = key.split('/');
@@ -50,16 +43,11 @@ export async function listCanvases(store: Store): Promise<CanvasInfo[]> {
     const meta = await readMeta(store, id);
     out.push({ id, name: meta?.name || id });
   }
-  out.sort((a, b) => {
-    if (a.id === DEFAULT_CANVAS_ID && b.id !== DEFAULT_CANVAS_ID) return -1;
-    if (b.id === DEFAULT_CANVAS_ID && a.id !== DEFAULT_CANVAS_ID) return 1;
-    return a.name.localeCompare(b.name);
-  });
+  out.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }
 
 export async function getCanvas(store: Store, id: string): Promise<CanvasEntityValue> {
-  await ensureDefaultCanvas(store);
   const layout = await readLayout(store, id);
   const meta = await readMeta(store, id);
   return { name: meta?.name || id, layout };
@@ -100,7 +88,6 @@ export async function patchCanvas(
 }
 
 export async function createCanvas(store: Store, name: string): Promise<CanvasInfo> {
-  await ensureDefaultCanvas(store);
   const trimmed = (name || '').trim() || 'New canvas';
   const slugBase = trimmed.toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'canvas';
   let slug = slugBase;
@@ -112,7 +99,6 @@ export async function createCanvas(store: Store, name: string): Promise<CanvasIn
 }
 
 export async function deleteCanvas(store: Store, id: string): Promise<void> {
-  if (id === DEFAULT_CANVAS_ID) throw new Error('The default canvas cannot be deleted');
   await store.delete(metaKey(id));
   await store.delete(layoutKey(id));
 }

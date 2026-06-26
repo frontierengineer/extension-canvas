@@ -451,12 +451,6 @@
   width: 100%;
 }
 
-.canvas-sidebar-title {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text-primary);
-}
-
 .canvas-new-btn {
   width: 100%;
 }
@@ -468,4 +462,20 @@
   height: 100%;
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+/* First-run / last-deleted empty state: a centered prompt to create a board.
+   Reuses .canvas-empty-title / .canvas-empty-body so its typography matches the
+   in-board "nothing placed yet" message. */
+.canvas-empty-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 360px;
+  padding: 24px;
+}
+
+.canvas-empty-create {
+  margin-top: 16px;
 }

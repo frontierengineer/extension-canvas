@@ -1,7 +1,6 @@
 import { useEffect, type ReactElement } from 'react';
 import { usePreviewClick } from '@frontierengineer/ui';
 import { useCanvasList } from '../useCanvasStore';
-import { DEFAULT_CANVAS_ID } from '../constants';
 import type { CanvasInfo } from '../types';
 import type { ConfirmOptions } from '../../../types';
 
@@ -63,13 +62,11 @@ function CanvasRow({
       title={canvas.name}
     >
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{canvas.name}</span>
-      {canvas.id !== DEFAULT_CANVAS_ID && (
-        <button
-          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px 4px', fontSize: 11, flexShrink: 0 }}
-          title="Delete canvas"
-          onClick={(e) => { e.stopPropagation(); void onDelete(canvas); }}
-        >×</button>
-      )}
+      <button
+        style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px 4px', fontSize: 11, flexShrink: 0 }}
+        title="Delete canvas"
+        onClick={(e) => { e.stopPropagation(); void onDelete(canvas); }}
+      >×</button>
     </div>
   );
 }

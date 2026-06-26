@@ -1,7 +1,5 @@
 import type { CanvasLayout, PostitColors } from './types';
 
-export const DEFAULT_CANVAS_ID = 'default';
-
 export const DEFAULT_CANVAS_LAYOUT: CanvasLayout = {
   version: 1,
   viewport: { zoom: 1, panX: 0, panY: 0 },
