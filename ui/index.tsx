@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ExtensionSidebar, Split } from '@frontierengineer/ui';
+// ActionButton + runActionInteractive come from the SUBPATH, not the kit barrel:
+// the barrel re-exports heavy modules (Monaco/FileBrowser) esbuild can't
+// tree-shake, which would bloat this lean extension by megabytes. The subpath
+// pulls only the action machinery. runActionInteractive is the non-hook path the
+// palette command uses to run an action; getSurfaceActionEnv resolves it in the
+// realm.
+import { ActionButton, runActionInteractive } from '@frontierengineer/ui/useAction';
+import { getSurfaceActionEnv } from '@frontierengineer/ui/actionRegistry';
 import type { UiV1, UiProvider, ExtensionHost } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
@@ -12,13 +20,19 @@ import './styles.css';
 // whole content rect: a left rail listing the canvases (with a New Canvas action)
 // and a main pane holding one infinite whiteboard. There is no host tab bar — the
 // extension holds the selected canvas in its own state and swaps the board in
-// the main pane. The sidebar + canvas components are re-housed verbatim; only
-// their wiring (route navigation → extension selection) changed.
+// the main pane.
+//
+// Creating a canvas is an ACTION (canvas.create_canvas), not a bespoke modal: the
+// host renders its modal from the input schema, an agent calls the SAME run() via
+// frontier.run_action, and the palette's "New Canvas" command is just the
+// keybinding/face of it (group:'create' + actionId). The action hands the new
+// canvas id to the render realm via prefs (pendingOpen) so the board opens —
+// however it was created (in-app button, palette redirect, or agent).
 // ─────────────────────────────────────────────────────────────────────
 
 // The whole Canvas extension. Holds the selected canvas id; the sidebar
 // selects, the main pane renders. `ui` is the controller realm's UiV1 (for
-// host-rendered modals); `host` is the extension's ExtensionHost (its
+// host-rendered modals + prefs); `host` is the extension's ExtensionHost (its
 // container, substrate, lifecycle).
 function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
   const list = useCanvasList((a) => a.list);
@@ -45,6 +59,22 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
     if (selectedId && loaded && !list.some((c) => c.id === selectedId)) setSelectedId(list[0]?.id ?? null);
   }, [selectedId, loaded, list]);
 
+  // A create from OUTSIDE this render realm (the canvas.new command via the
+  // palette redirect) can't call setSelectedId here, so canvas.create_canvas
+  // leaves the new canvas id in prefs. Open exactly THAT canvas — refreshing this
+  // realm's list first so the deletion-guard above doesn't immediately drop it —
+  // then clear the signal. This is what makes "create a canvas" land you on the
+  // board you just created, however it was created.
+  useEffect(() => {
+    const open = (id: unknown) => {
+      if (typeof id !== 'string' || !id) return;
+      ui.prefs.delete('pendingOpen');
+      void useCanvasListRaw().fetchList().then(() => setSelectedId(id));
+    };
+    open(ui.prefs.get('pendingOpen'));
+    return ui.prefs.watch('pendingOpen', open);
+  }, [ui]);
+
   // Refresh the canvas list on COMMIT (the user switched here), per the warm-keep
   // lifecycle — a canvas may have been created/deleted elsewhere while this app
   // was hidden. A peek is a glance and takes no such side effect.
@@ -53,12 +83,15 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
   const sidebar = (
     <ExtensionSidebar
       footer={
-        <button
+        // New Canvas IS the action's UI — clicking opens the host-rendered modal,
+        // runs canvas.create_canvas, and onResult focuses the new board here.
+        <ActionButton
+          actionId="canvas.create_canvas"
           className="btn-secondary btn-sm canvas-new-btn"
-          onClick={() => { void showNewCanvasModal(ui, setSelectedId); }}
+          onResult={(v) => { const id = (v as { id?: string } | undefined)?.id; if (id) setSelectedId(id); }}
         >
           New Canvas
-        </button>
+        </ActionButton>
       }
     >
       <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => ui.modals.confirm(o).then((r) => r === true)} />
@@ -77,12 +110,13 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
           Create your first canvas to start dropping sticky notes and sketching out
           areas on an infinite board.
         </div>
-        <button
+        <ActionButton
+          actionId="canvas.create_canvas"
           className="btn-primary canvas-empty-create"
-          onClick={() => { void showNewCanvasModal(ui, setSelectedId); }}
+          onResult={(v) => { const id = (v as { id?: string } | undefined)?.id; if (id) setSelectedId(id); }}
         >
           Create your first canvas
-        </button>
+        </ActionButton>
       </div>
     </div>
   ) : (
@@ -113,13 +147,49 @@ export function register(uiProvider: UiProvider): void {
     category: 'Canvas',
     defaultKey: 'Alt+C',
     group: 'create',
-    // The create command runs in the controller realm, which has no
-    // openExtension — a palette/Home invocation can't itself switch the shell
-    // to the Canvas extension. It opens the host-rendered modal and creates the
-    // canvas; the new canvas appears in the rail once the Canvas extension is
-    // shown. The in-extension New Canvas button takes the richer path (a select
-    // callback) so the fresh canvas opens in the main pane immediately.
-    run: () => { void showNewCanvasModal(ui); },
+    // The palette/keybinding FACE of canvas.create_canvas — the palette merges
+    // them into one "New Canvas" row (carrying the action's description) and drops
+    // the standalone action twin. The host redirects a group:'create' command to
+    // this app (switchTo), and the action hands the new canvas id to the render
+    // realm via prefs (pendingOpen) so the board opens. A command runs outside
+    // React render, so resolve + run via the realm env, not the useAction hook.
+    actionId: 'canvas.create_canvas',
+    run: () => {
+      const env = getSurfaceActionEnv();
+      const action = env?.getAction('canvas.create_canvas');
+      if (env && action) void runActionInteractive(env, action);
+    },
+  });
+
+  // The create action (docs/core/extensions.md): the host generates its modal
+  // from this schema AND an agent calls the SAME run() over MCP
+  // (frontier.run_action "canvas.create_canvas"). Runs in this controller realm
+  // (the UI), never on the host.
+  ui.actions.register({
+    id: 'canvas.create_canvas',
+    title: 'New Canvas',
+    description:
+      'Create a new canvas — an infinite, zoomable whiteboard for sticky notes and ' +
+      'colored areas — and open it. Give it a name. Returns the new canvas id. Same ' +
+      'as the in-app "New Canvas" button.',
+    input: {
+      fields: [
+        { key: 'name', type: 'string', label: 'Name', required: true, placeholder: 'My Canvas' },
+      ],
+    },
+    async run(_ctx, input) {
+      const args = (input ?? {}) as { name?: string };
+      const name = String(args.name ?? '').trim();
+      // Precondition → explicit failure outcome naming the field, so the host
+      // modal points at the bad input and an agent gets a stable code.
+      if (!name) return { ok: false, code: 'missing_name', field: 'name', error: 'A name is required to create a canvas.' };
+      const info = await useCanvasListRaw().createCanvas(name);
+      // Hand the new canvas id to the render realm so it opens THAT board (the
+      // path the palette command relies on); the in-app button also focuses it
+      // via onResult.
+      ui.prefs.set('pendingOpen', info.id);
+      return { id: info.id, name: info.name };
+    },
   });
 
   // ONE extension content surface — the whole canvas experience lives inside
@@ -137,19 +207,4 @@ export function register(uiProvider: UiProvider): void {
       return () => { root?.unmount(); root = null; };
     },
   });
-}
-
-async function showNewCanvasModal(ui: UiV1, onCreated?: (canvasId: string) => void): Promise<void> {
-  const result = await ui.modals.prompt({
-    title: 'New Canvas',
-    fields: [{ key: 'name', label: 'Name', type: 'string', placeholder: 'My Canvas', required: true }],
-    submitLabel: 'Create',
-  });
-  if (!result) return;
-  try {
-    const info = await useCanvasListRaw().createCanvas(result.name);
-    onCreated?.(info.id);
-  } catch (err) {
-    console.error('[canvas] create failed:', err);
-  }
 }
