@@ -5,7 +5,6 @@ import type { UiV1, UiProvider, ExtensionHost } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
 import { initCanvas, useCanvasList, useCanvasListRaw } from './useCanvasStore';
-import { DEFAULT_CANVAS_ID } from './constants';
 import './styles.css';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -25,12 +24,13 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
   const list = useCanvasList((a) => a.list);
   const loaded = useCanvasList((a) => a.loaded);
 
-  // Default to the always-present default canvas once the list loads, so the
-  // app opens onto a board rather than an empty pane.
+  // Open onto the first canvas once the list loads, so the app lands on a board
+  // rather than an empty pane. With no canvases yet, stay unselected and let the
+  // main pane render the empty-state prompt.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   useEffect(() => {
-    if (selectedId === null && loaded) setSelectedId(DEFAULT_CANVAS_ID);
-  }, [selectedId, loaded]);
+    if (selectedId === null && loaded && list.length > 0) setSelectedId(list[0].id);
+  }, [selectedId, loaded, list]);
 
   // The sidebar still calls navigate('/canvas/<id>') — keep the component
   // verbatim and translate the route into app selection here.
@@ -39,10 +39,10 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
     if (id) setSelectedId(id);
   }, []);
 
-  // If the open canvas is deleted from the list, fall back to the default board
-  // instead of rendering a dead canvas.
+  // If the open canvas is deleted, fall back to the first remaining board — or to
+  // no selection (the empty state) when it was the last one.
   useEffect(() => {
-    if (selectedId && loaded && !list.some((c) => c.id === selectedId)) setSelectedId(DEFAULT_CANVAS_ID);
+    if (selectedId && loaded && !list.some((c) => c.id === selectedId)) setSelectedId(list[0]?.id ?? null);
   }, [selectedId, loaded, list]);
 
   // Refresh the canvas list on COMMIT (the user switched here), per the warm-keep
@@ -52,7 +52,6 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
 
   const sidebar = (
     <ExtensionSidebar
-      header={<div className="canvas-sidebar-title">Canvases</div>}
       footer={
         <button
           className="btn-secondary btn-sm canvas-new-btn"
@@ -62,12 +61,30 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
         </button>
       }
     >
-      <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => ui.modals.confirm(o)} />
+      <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => ui.modals.confirm(o).then((r) => r === true)} />
     </ExtensionSidebar>
   );
 
+  // Three states: an open board, the first-run empty prompt (list loaded but
+  // empty — e.g. the user deleted their last canvas), or the brief load.
   const main = selectedId ? (
     <CanvasView key={selectedId} canvasId={selectedId} />
+  ) : loaded && list.length === 0 ? (
+    <div className="canvas-empty-pane">
+      <div className="canvas-empty-prompt">
+        <div className="canvas-empty-title">No canvases yet</div>
+        <div className="canvas-empty-body">
+          Create your first canvas to start dropping sticky notes and sketching out
+          areas on an infinite board.
+        </div>
+        <button
+          className="btn-primary canvas-empty-create"
+          onClick={() => { void showNewCanvasModal(ui, setSelectedId); }}
+        >
+          Create your first canvas
+        </button>
+      </div>
+    </div>
   ) : (
     <div className="canvas-empty-pane">Loading…</div>
   );
