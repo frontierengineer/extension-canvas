@@ -19,6 +19,7 @@ export function CanvasSidebar({ navigate, confirm }: {
       message: `Delete "${c.name}" and everything on it? This cannot be undone.`,
       confirmLabel: 'Delete',
       danger: true,
+      extraActionLabel: null,
     });
     if (ok) void remove(c.id);
   };

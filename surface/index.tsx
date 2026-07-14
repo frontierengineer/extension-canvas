@@ -26,14 +26,15 @@ import './styles.css';
 // host renders its modal from the input schema, an agent calls the SAME run() via
 // frontier.run_action, and the palette's "New Canvas" command is just the
 // keybinding/face of it (group:'create' + actionId). The action lives in the
-// daemon and hands the new canvas id to the render realm via prefs (pendingOpen)
-// so the board opens — however it was created (in-app button, palette redirect,
-// or agent).
+// daemon and hands the new canvas id to the render realm via localSettings +
+// a bus.extension event (pendingOpen) so the board opens — however it was
+// created (in-app button, palette redirect, or agent).
 // ─────────────────────────────────────────────────────────────────────
 
 // The whole Canvas extension. Holds the selected canvas id; the sidebar
 // selects, the main pane renders. `host` is the extension's ExtensionHost (its
-// container, substrate, lifecycle, and the services carrying modals + prefs).
+// container, substrate, lifecycle, and the services carrying modals +
+// localSettings).
 function CanvasApp({ host }: { host: ExtensionHost }) {
   const list = useCanvasList((a) => a.list);
   const loaded = useCanvasList((a) => a.loaded);
@@ -61,18 +62,23 @@ function CanvasApp({ host }: { host: ExtensionHost }) {
 
   // A create from OUTSIDE this render realm (the canvas.new command via the
   // palette redirect) can't call setSelectedId here, so canvas.create_canvas
-  // leaves the new canvas id in prefs. Open exactly THAT canvas — refreshing this
-  // realm's list first so the deletion-guard above doesn't immediately drop it —
-  // then clear the signal. This is what makes "create a canvas" land you on the
-  // board you just created, however it was created.
+  // signals the new canvas id on two channels. Open exactly THAT canvas —
+  // refreshing this realm's list first so the deletion-guard above doesn't
+  // immediately drop it — then clear the signal. This is what makes "create a
+  // canvas" land you on the board you just created, however it was created.
+  //
+  // Two channels, because local settings are storage, not a signaling channel
+  // (it cannot be watched): read the value left in localSettings at mount (a
+  // create that happened before this app warmed), and subscribe to the live
+  // bus.extension event (a create while this app is already open).
   useEffect(() => {
     const open = (id: unknown) => {
       if (typeof id !== 'string' || !id) return;
-      host.services.prefs.delete('pendingOpen');
+      host.services.localSettings.delete('pendingOpen');
       void useCanvasListRaw().fetchList().then(() => setSelectedId(id));
     };
-    open(host.services.prefs.get('pendingOpen'));
-    const sub = host.services.prefs.watch('pendingOpen', open);
+    open(host.services.localSettings.get('pendingOpen'));
+    const sub = host.services.bus.extension.subscribe('pendingOpen', open);
     return () => sub.unsubscribe();
   }, [host]);
 
@@ -161,7 +167,8 @@ export function register(surfaceProvider: SurfaceProvider): void {
         // them into one "New Canvas" row (carrying the action's description) and drops
         // the standalone action twin. The host redirects a group:'create' command to
         // this app (switchTo), and the action hands the new canvas id to the render
-        // realm via prefs (pendingOpen) so the board opens. A command runs outside
+        // realm via localSettings + a bus.extension event (pendingOpen) so the
+        // board opens. A command runs outside
         // React render, so resolve + run via the realm env, not the useAction hook.
         actionId: 'canvas.create_canvas',
         run: () => {
@@ -184,9 +191,13 @@ export function register(surfaceProvider: SurfaceProvider): void {
           'as the in-app "New Canvas" button.',
         input: {
           fields: [
-            { key: 'name', type: 'string', label: 'Name', required: true, placeholder: 'My Canvas' },
+            { key: 'name', type: 'string', label: 'Name', description: null, required: true, default: null, placeholder: 'My Canvas' },
           ],
         },
+        // Returns a plain { id, name }, not a declared output schema; runs in this
+        // surface daemon (the default realm), stated explicitly.
+        output: null,
+        realm: null,
         async run(_ctx, input) {
           const args = (input ?? {}) as { name?: string };
           const name = String(args.name ?? '').trim();
@@ -196,11 +207,16 @@ export function register(surfaceProvider: SurfaceProvider): void {
           const info = await useCanvasListRaw().createCanvas(name);
           // Hand the new canvas id to the render realm so it opens THAT board (the
           // path the palette command relies on); the in-app button also focuses it
-          // via onResult.
-          ctx.services.prefs.set('pendingOpen', info.id);
+          // via onResult. Two channels: leave it in localSettings for an app that
+          // has not warmed yet to read at mount, and publish a bus.extension event
+          // so an already-open app reacts live.
+          ctx.services.localSettings.set('pendingOpen', info.id);
+          ctx.services.bus.extension.publish('pendingOpen', info.id);
           return { id: info.id, name: info.name };
         },
       });
+      // Nothing to tear down: the command and action deregister with the daemon.
+      return null;
     },
   });
 
@@ -213,11 +229,13 @@ export function register(surfaceProvider: SurfaceProvider): void {
     // An infinite-canvas glyph: a framed board with a couple of nodes.
     icon: 'M2 3.5h12v9H2zM5 6.5h3v2H5zM9.5 8.5h2.5v2H9.5z',
     color: '#6366f1',
+    // Runs on any surface; no capability floor.
+    requires: null,
     mount(host: ExtensionHost) {
       initCanvas(host.services.store);
       root = createRoot(host.container);
       root.render(<CanvasApp host={host} />);
-      return () => { root?.unmount(); root = null; };
+      return { dispose: () => { root?.unmount(); root = null; } };
     },
   });
 }
