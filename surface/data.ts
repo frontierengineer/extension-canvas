@@ -6,20 +6,21 @@ const layoutKey = (id: string) => `canvases/${id}/layout.json`;
 const metaKey = (id: string) => `canvases/${id}/meta.json`;
 
 async function readMeta(store: Store, id: string): Promise<CanvasMeta | null> {
-  const raw = await store.get(metaKey(id));
-  if (!raw) return null;
-  const parsed = JSON.parse(raw) as Partial<CanvasMeta>;
-  return { name: parsed.name || id };
+  const r = await store.getJson<Partial<CanvasMeta>>(metaKey(id));
+  if (!r.ok) throw new Error(r.error.message);
+  if (r.value === null) return null;
+  return { name: r.value.name || id };
 }
 
 async function writeMeta(store: Store, id: string, meta: CanvasMeta): Promise<void> {
-  await store.put(metaKey(id), JSON.stringify(meta, null, 2));
+  await store.putJson(metaKey(id), meta);
 }
 
 async function readLayout(store: Store, id: string): Promise<CanvasLayout> {
-  const raw = await store.get(layoutKey(id));
-  if (!raw) return { ...DEFAULT_CANVAS_LAYOUT };
-  const parsed = JSON.parse(raw) as Partial<CanvasLayout>;
+  const r = await store.getJson<Partial<CanvasLayout>>(layoutKey(id));
+  if (!r.ok) throw new Error(r.error.message);
+  if (r.value === null) return { ...DEFAULT_CANVAS_LAYOUT };
+  const parsed = r.value;
   return {
     version: parsed.version || 1,
     viewport: { ...DEFAULT_CANVAS_LAYOUT.viewport, ...(parsed.viewport || {}) },
@@ -29,7 +30,7 @@ async function readLayout(store: Store, id: string): Promise<CanvasLayout> {
 }
 
 async function writeLayout(store: Store, id: string, layout: CanvasLayout): Promise<void> {
-  await store.put(layoutKey(id), JSON.stringify(layout, null, 2));
+  await store.putJson(layoutKey(id), layout);
 }
 
 export async function listCanvases(store: Store): Promise<CanvasInfo[]> {
@@ -92,7 +93,7 @@ export async function createCanvas(store: Store, name: string): Promise<CanvasIn
   const slugBase = trimmed.toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'canvas';
   let slug = slugBase;
   let n = 2;
-  while (await store.get(metaKey(slug))) slug = `${slugBase}_${n++}`;
+  while (await store.getString(metaKey(slug))) slug = `${slugBase}_${n++}`;
   await writeMeta(store, slug, { name: trimmed });
   await writeLayout(store, slug, { ...DEFAULT_CANVAS_LAYOUT });
   return { id: slug, name: trimmed };

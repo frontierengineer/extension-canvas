@@ -72,13 +72,17 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
       void useCanvasListRaw().fetchList().then(() => setSelectedId(id));
     };
     open(ui.prefs.get('pendingOpen'));
-    return ui.prefs.watch('pendingOpen', open);
+    const sub = ui.prefs.watch('pendingOpen', open);
+    return () => sub.unsubscribe();
   }, [ui]);
 
   // Refresh the canvas list on COMMIT (the user switched here), per the warm-keep
   // lifecycle — a canvas may have been created/deleted elsewhere while this app
   // was hidden. A peek is a glance and takes no such side effect.
-  useEffect(() => host.lifecycle.onActivate(() => { void useCanvasListRaw().fetchList(); }), [host]);
+  useEffect(() => {
+    const sub = host.lifecycle.onActivate(() => { void useCanvasListRaw().fetchList(); });
+    return () => sub.unsubscribe();
+  }, [host]);
 
   const sidebar = (
     <ExtensionSidebar
