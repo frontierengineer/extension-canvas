@@ -9,7 +9,7 @@ import { ExtensionSidebar, Split } from '@frontierengineer/ui';
 // realm.
 import { ActionButton, runActionInteractive } from '@frontierengineer/ui/useAction';
 import { getSurfaceActionEnv } from '@frontierengineer/ui/actionRegistry';
-import type { UiV1, UiProvider, ExtensionHost } from '../../types';
+import type { SurfaceV1, SurfaceProvider, ExtensionHost } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
 import { initCanvas, useCanvasList, useCanvasListRaw } from './useCanvasStore';
@@ -31,10 +31,10 @@ import './styles.css';
 // ─────────────────────────────────────────────────────────────────────
 
 // The whole Canvas extension. Holds the selected canvas id; the sidebar
-// selects, the main pane renders. `ui` is the controller realm's UiV1 (for
+// selects, the main pane renders. `ui` is the controller realm's SurfaceV1 (for
 // host-rendered modals + prefs); `host` is the extension's ExtensionHost (its
 // container, substrate, lifecycle).
-function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
+function CanvasApp({ ui, host }: { ui: SurfaceV1; host: ExtensionHost }) {
   const list = useCanvasList((a) => a.list);
   const loaded = useCanvasList((a) => a.loaded);
 
@@ -141,7 +141,7 @@ function CanvasApp({ ui, host }: { ui: UiV1; host: ExtensionHost }) {
   );
 }
 
-export function register(uiProvider: UiProvider): void {
+export function register(uiProvider: SurfaceProvider): void {
   const ui = uiProvider.version(1);
   initCanvas(ui.services.store);
 
