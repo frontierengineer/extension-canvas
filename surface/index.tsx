@@ -9,7 +9,7 @@ import { ExtensionSidebar, Split } from '@frontierengineer/ui';
 // realm.
 import { ActionButton, runActionInteractive } from '@frontierengineer/ui/useAction';
 import { getSurfaceActionEnv } from '@frontierengineer/ui/actionRegistry';
-import type { SurfaceV1, SurfaceProvider, ExtensionHost } from '../../types';
+import type { SurfaceProvider, ExtensionHost } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
 import { initCanvas, useCanvasList, useCanvasListRaw } from './useCanvasStore';
@@ -25,16 +25,16 @@ import './styles.css';
 // Creating a canvas is an ACTION (canvas.create_canvas), not a bespoke modal: the
 // host renders its modal from the input schema, an agent calls the SAME run() via
 // frontier.run_action, and the palette's "New Canvas" command is just the
-// keybinding/face of it (group:'create' + actionId). The action hands the new
-// canvas id to the render realm via prefs (pendingOpen) so the board opens —
-// however it was created (in-app button, palette redirect, or agent).
+// keybinding/face of it (group:'create' + actionId). The action lives in the
+// daemon and hands the new canvas id to the render realm via prefs (pendingOpen)
+// so the board opens — however it was created (in-app button, palette redirect,
+// or agent).
 // ─────────────────────────────────────────────────────────────────────
 
 // The whole Canvas extension. Holds the selected canvas id; the sidebar
-// selects, the main pane renders. `ui` is the controller realm's SurfaceV1 (for
-// host-rendered modals + prefs); `host` is the extension's ExtensionHost (its
-// container, substrate, lifecycle).
-function CanvasApp({ ui, host }: { ui: SurfaceV1; host: ExtensionHost }) {
+// selects, the main pane renders. `host` is the extension's ExtensionHost (its
+// container, substrate, lifecycle, and the services carrying modals + prefs).
+function CanvasApp({ host }: { host: ExtensionHost }) {
   const list = useCanvasList((a) => a.list);
   const loaded = useCanvasList((a) => a.loaded);
 
@@ -68,13 +68,13 @@ function CanvasApp({ ui, host }: { ui: SurfaceV1; host: ExtensionHost }) {
   useEffect(() => {
     const open = (id: unknown) => {
       if (typeof id !== 'string' || !id) return;
-      ui.prefs.delete('pendingOpen');
+      host.services.prefs.delete('pendingOpen');
       void useCanvasListRaw().fetchList().then(() => setSelectedId(id));
     };
-    open(ui.prefs.get('pendingOpen'));
-    const sub = ui.prefs.watch('pendingOpen', open);
+    open(host.services.prefs.get('pendingOpen'));
+    const sub = host.services.prefs.watch('pendingOpen', open);
     return () => sub.unsubscribe();
-  }, [ui]);
+  }, [host]);
 
   // Refresh the canvas list on COMMIT (the user switched here), per the warm-keep
   // lifecycle — a canvas may have been created/deleted elsewhere while this app
@@ -98,7 +98,7 @@ function CanvasApp({ ui, host }: { ui: SurfaceV1; host: ExtensionHost }) {
         </ActionButton>
       }
     >
-      <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => ui.modals.confirm(o).then((r) => r === true)} />
+      <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => host.services.modals.confirm(o).then((r) => r === true)} />
     </ExtensionSidebar>
   );
 
@@ -141,73 +141,82 @@ function CanvasApp({ ui, host }: { ui: SurfaceV1; host: ExtensionHost }) {
   );
 }
 
-export function register(uiProvider: SurfaceProvider): void {
-  const ui = uiProvider.version(1);
-  initCanvas(ui.services.store);
+export function register(surfaceProvider: SurfaceProvider): void {
+  const surface = surfaceProvider.version(1);
 
-  ui.commands.register({
-    id: 'canvas.new',
-    label: 'New Canvas',
-    category: 'Canvas',
-    defaultKey: 'Alt+C',
-    group: 'create',
-    // The palette/keybinding FACE of canvas.create_canvas — the palette merges
-    // them into one "New Canvas" row (carrying the action's description) and drops
-    // the standalone action twin. The host redirects a group:'create' command to
-    // this app (switchTo), and the action hands the new canvas id to the render
-    // realm via prefs (pendingOpen) so the board opens. A command runs outside
-    // React render, so resolve + run via the realm env, not the useAction hook.
-    actionId: 'canvas.create_canvas',
-    run: () => {
-      const env = getSurfaceActionEnv();
-      const action = env?.getAction('canvas.create_canvas');
-      if (env && action) void runActionInteractive(env, action);
-    },
-  });
+  // The DAEMON: the always-on headless component that hosts the extension's
+  // background logic — it seeds the canvas store from its own services and
+  // declares the create command + action, whose closures live here.
+  surface.daemon.register({
+    mount(ctx) {
+      initCanvas(ctx.services.store);
 
-  // The create action (docs/core/extensions.md): the host generates its modal
-  // from this schema AND an agent calls the SAME run() over MCP
-  // (frontier.run_action "canvas.create_canvas"). Runs in this controller realm
-  // (the UI), never on the host.
-  ui.actions.register({
-    id: 'canvas.create_canvas',
-    title: 'New Canvas',
-    description:
-      'Create a new canvas — an infinite, zoomable whiteboard for sticky notes and ' +
-      'colored areas — and open it. Give it a name. Returns the new canvas id. Same ' +
-      'as the in-app "New Canvas" button.',
-    input: {
-      fields: [
-        { key: 'name', type: 'string', label: 'Name', required: true, placeholder: 'My Canvas' },
-      ],
-    },
-    async run(_ctx, input) {
-      const args = (input ?? {}) as { name?: string };
-      const name = String(args.name ?? '').trim();
-      // Precondition → explicit failure outcome naming the field, so the host
-      // modal points at the bad input and an agent gets a stable code.
-      if (!name) return { ok: false, code: 'missing_name', field: 'name', error: 'A name is required to create a canvas.' };
-      const info = await useCanvasListRaw().createCanvas(name);
-      // Hand the new canvas id to the render realm so it opens THAT board (the
-      // path the palette command relies on); the in-app button also focuses it
-      // via onResult.
-      ui.prefs.set('pendingOpen', info.id);
-      return { id: info.id, name: info.name };
+      ctx.commands.register({
+        id: 'canvas.new',
+        label: 'New Canvas',
+        category: 'Canvas',
+        defaultKey: 'Alt+C',
+        group: 'create',
+        // The palette/keybinding FACE of canvas.create_canvas — the palette merges
+        // them into one "New Canvas" row (carrying the action's description) and drops
+        // the standalone action twin. The host redirects a group:'create' command to
+        // this app (switchTo), and the action hands the new canvas id to the render
+        // realm via prefs (pendingOpen) so the board opens. A command runs outside
+        // React render, so resolve + run via the realm env, not the useAction hook.
+        actionId: 'canvas.create_canvas',
+        run: () => {
+          const env = getSurfaceActionEnv();
+          const action = env?.getAction('canvas.create_canvas');
+          if (env && action) void runActionInteractive(env, action);
+        },
+      });
+
+      // The create action (docs/core/extensions.md): the host generates its modal
+      // from this schema AND an agent calls the SAME run() over MCP
+      // (frontier.run_action "canvas.create_canvas"). Runs in this daemon (the
+      // surface realm), never on the host.
+      ctx.actions.register({
+        id: 'canvas.create_canvas',
+        title: 'New Canvas',
+        description:
+          'Create a new canvas — an infinite, zoomable whiteboard for sticky notes and ' +
+          'colored areas — and open it. Give it a name. Returns the new canvas id. Same ' +
+          'as the in-app "New Canvas" button.',
+        input: {
+          fields: [
+            { key: 'name', type: 'string', label: 'Name', required: true, placeholder: 'My Canvas' },
+          ],
+        },
+        async run(_ctx, input) {
+          const args = (input ?? {}) as { name?: string };
+          const name = String(args.name ?? '').trim();
+          // Precondition → explicit failure outcome naming the field, so the host
+          // modal points at the bad input and an agent gets a stable code.
+          if (!name) return { ok: false, code: 'missing_name', field: 'name', error: 'A name is required to create a canvas.' };
+          const info = await useCanvasListRaw().createCanvas(name);
+          // Hand the new canvas id to the render realm so it opens THAT board (the
+          // path the palette command relies on); the in-app button also focuses it
+          // via onResult.
+          ctx.services.prefs.set('pendingOpen', info.id);
+          return { id: info.id, name: info.name };
+        },
+      });
     },
   });
 
   // ONE extension content surface — the whole canvas experience lives inside
   // this mount.
   let root: ReturnType<typeof createRoot> | null = null;
-  ui.application.register({
+  surface.application.register({
     id: 'canvas',
     title: 'Canvas',
     // An infinite-canvas glyph: a framed board with a couple of nodes.
     icon: 'M2 3.5h12v9H2zM5 6.5h3v2H5zM9.5 8.5h2.5v2H9.5z',
     color: '#6366f1',
     mount(host: ExtensionHost) {
+      initCanvas(host.services.store);
       root = createRoot(host.container);
-      root.render(<CanvasApp ui={ui} host={host} />);
+      root.render(<CanvasApp host={host} />);
       return () => { root?.unmount(); root = null; };
     },
   });
