@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ExtensionSidebar, Split } from '@frontierengineer/ui';
-// ActionButton + runActionInteractive come from the SUBPATH, not the kit barrel:
-// the barrel re-exports heavy modules (Monaco/FileBrowser) esbuild can't
-// tree-shake, which would bloat this lean extension by megabytes. The subpath
-// pulls only the action machinery. runActionInteractive is the non-hook path the
-// palette command uses to run an action; getSurfaceActionEnv resolves it in the
-// realm.
-import { ActionButton, runActionInteractive } from '@frontierengineer/ui/useAction';
-import { getSurfaceActionEnv } from '@frontierengineer/ui/actionRegistry';
+// ActionButton comes from the SUBPATH, not the kit barrel: the barrel re-exports
+// heavy modules (Monaco/FileBrowser) esbuild can't tree-shake, which would bloat
+// this lean extension by megabytes. The subpath pulls only the action machinery.
+import { ActionButton } from '@frontierengineer/ui/useAction';
 import type { SurfaceProvider, ExtensionHost } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
@@ -24,11 +20,12 @@ import './styles.css';
 //
 // Creating a canvas is an ACTION (canvas.create_canvas), not a bespoke modal: the
 // host renders its modal from the input schema, an agent calls the SAME run() via
-// frontier.run_action, and the palette's "New Canvas" command is just the
-// keybinding/face of it (group:'create' + actionId). The action lives in the
-// daemon and hands the new canvas id to the render realm via localSettings +
-// a bus.extension event (pendingOpen) so the board opens — however it was
-// created (in-app button, palette redirect, or agent).
+// frontier.run_action, and — since every action appears in the command palette —
+// the palette lists "New Canvas" directly (it carries the palette fields
+// category/defaultKey/group:'create'). The action lives in the daemon and hands
+// the new canvas id to the render realm via localSettings + a bus.extension event
+// (pendingOpen) so the board opens — however it was created (in-app button,
+// palette invocation, or agent).
 // ─────────────────────────────────────────────────────────────────────
 
 // The whole Canvas extension. Holds the selected canvas id; the sidebar
@@ -60,8 +57,8 @@ function CanvasApp({ host }: { host: ExtensionHost }) {
     if (selectedId && loaded && !list.some((c) => c.id === selectedId)) setSelectedId(list[0]?.id ?? null);
   }, [selectedId, loaded, list]);
 
-  // A create from OUTSIDE this render realm (the canvas.new command via the
-  // palette redirect) can't call setSelectedId here, so canvas.create_canvas
+  // A create from OUTSIDE this render realm (canvas.create_canvas invoked from
+  // the palette or by an agent) can't call setSelectedId here, so the action
   // signals the new canvas id on two channels. Open exactly THAT canvas —
   // refreshing this realm's list first so the deletion-guard above doesn't
   // immediately drop it — then clear the signal. This is what makes "create a
@@ -74,17 +71,17 @@ function CanvasApp({ host }: { host: ExtensionHost }) {
   useEffect(() => {
     const open = (id: unknown) => {
       if (typeof id !== 'string' || !id) return;
-      host.services.localSettings.delete('pendingOpen');
+      host.localSettings.delete('pendingOpen');
       void useCanvasListRaw().fetchList().then(() => setSelectedId(id));
     };
-    open(host.services.localSettings.get('pendingOpen'));
-    const sub = host.services.bus.extension.subscribe('pendingOpen', open);
+    open(host.localSettings.get('pendingOpen'));
+    const sub = host.bus.extension.subscribe('pendingOpen', open);
     return () => sub.unsubscribe();
   }, [host]);
 
-  // Refresh the canvas list on COMMIT (the user switched here), per the warm-keep
-  // lifecycle — a canvas may have been created/deleted elsewhere while this app
-  // was hidden. A peek is a glance and takes no such side effect.
+  // Refresh the canvas list on activation (the user switched here), per the
+  // warm-keep lifecycle — a canvas may have been created/deleted elsewhere while
+  // this app was hidden.
   useEffect(() => {
     const sub = host.lifecycle.onActivate(() => { void useCanvasListRaw().fetchList(); });
     return () => sub.unsubscribe();
@@ -104,7 +101,7 @@ function CanvasApp({ host }: { host: ExtensionHost }) {
         </ActionButton>
       }
     >
-      <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => host.services.modals.confirm(o).then((r) => r === true)} />
+      <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => host.modals.confirm(o).then((r) => r === true)} />
     </ExtensionSidebar>
   );
 
@@ -151,37 +148,19 @@ export function register(surfaceProvider: SurfaceProvider): void {
   const surface = surfaceProvider.version(1);
 
   // The DAEMON: the always-on headless component that hosts the extension's
-  // background logic — it seeds the canvas store from its own services and
-  // declares the create command + action, whose closures live here.
+  // background logic — it seeds the canvas store from its own context and
+  // declares the create action, whose closure lives here.
   surface.daemon.register({
     mount(ctx) {
-      initCanvas(ctx.services.store);
-
-      ctx.commands.register({
-        id: 'canvas.new',
-        label: 'New Canvas',
-        category: 'Canvas',
-        defaultKey: 'Alt+C',
-        group: 'create',
-        // The palette/keybinding FACE of canvas.create_canvas — the palette merges
-        // them into one "New Canvas" row (carrying the action's description) and drops
-        // the standalone action twin. The host redirects a group:'create' command to
-        // this app (switchTo), and the action hands the new canvas id to the render
-        // realm via localSettings + a bus.extension event (pendingOpen) so the
-        // board opens. A command runs outside
-        // React render, so resolve + run via the realm env, not the useAction hook.
-        actionId: 'canvas.create_canvas',
-        run: () => {
-          const env = getSurfaceActionEnv();
-          const action = env?.getAction('canvas.create_canvas');
-          if (env && action) void runActionInteractive(env, action);
-        },
-      });
+      initCanvas(ctx.store);
 
       // The create action (docs/core/extensions.md): the host generates its modal
       // from this schema AND an agent calls the SAME run() over MCP
       // (frontier.run_action "canvas.create_canvas"). Runs in this daemon (the
-      // surface realm), never on the host.
+      // surface realm), never on the host. Because every action is palette-
+      // invocable, this one carries the palette fields the old "New Canvas"
+      // command used to hold (category/defaultKey/group:'create'); the group
+      // 'create' marks it as the extension's primary New action for the Home CTAs.
       ctx.actions.register({
         id: 'canvas.create_canvas',
         title: 'New Canvas',
@@ -189,6 +168,9 @@ export function register(surfaceProvider: SurfaceProvider): void {
           'Create a new canvas — an infinite, zoomable whiteboard for sticky notes and ' +
           'colored areas — and open it. Give it a name. Returns the new canvas id. Same ' +
           'as the in-app "New Canvas" button.',
+        category: 'Canvas',
+        defaultKey: 'Alt+C',
+        group: 'create',
         input: {
           fields: [
             { key: 'name', type: 'string', label: 'Name', description: null, required: true, default: null, placeholder: 'My Canvas' },
@@ -210,13 +192,13 @@ export function register(surfaceProvider: SurfaceProvider): void {
           // via onResult. Two channels: leave it in localSettings for an app that
           // has not warmed yet to read at mount, and publish a bus.extension event
           // so an already-open app reacts live.
-          ctx.services.localSettings.set('pendingOpen', info.id);
-          ctx.services.bus.extension.publish('pendingOpen', info.id);
+          ctx.localSettings.set('pendingOpen', info.id);
+          ctx.bus.extension.publish('pendingOpen', info.id);
           return { id: info.id, name: info.name };
         },
       });
-      // Nothing to tear down: the command and action deregister with the daemon.
-      return null;
+      // Nothing to tear down: the action deregisters with the daemon.
+      return {};
     },
   });
 
@@ -232,7 +214,7 @@ export function register(surfaceProvider: SurfaceProvider): void {
     // Runs on any surface; no capability floor.
     requires: null,
     mount(host: ExtensionHost) {
-      initCanvas(host.services.store);
+      initCanvas(host.store);
       root = createRoot(host.container);
       root.render(<CanvasApp host={host} />);
       return { dispose: () => { root?.unmount(); root = null; } };
