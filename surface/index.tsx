@@ -5,7 +5,7 @@ import { ExtensionSidebar, Split } from '@frontierengineer/ui';
 // heavy modules (Monaco/FileBrowser) esbuild can't tree-shake, which would bloat
 // this lean extension by megabytes. The subpath pulls only the action machinery.
 import { ActionButton } from '@frontierengineer/ui/useAction';
-import type { SurfaceProvider, ExtensionHost } from '../../types';
+import type { SurfaceProvider, ViewHost } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
 import { initCanvas, useCanvasList, useCanvasListRaw } from './useCanvasStore';
@@ -29,10 +29,10 @@ import './styles.css';
 // ─────────────────────────────────────────────────────────────────────
 
 // The whole Canvas extension. Holds the selected canvas id; the sidebar
-// selects, the main pane renders. `host` is the extension's ExtensionHost (its
+// selects, the main pane renders. `host` is the extension's ViewHost (its
 // container, substrate, lifecycle, and the services carrying modals +
 // localSettings).
-function CanvasApp({ host }: { host: ExtensionHost }) {
+function CanvasApp({ host }: { host: ViewHost }) {
   const list = useCanvasList((a) => a.list);
   const loaded = useCanvasList((a) => a.loaded);
 
@@ -176,10 +176,10 @@ export function register(surfaceProvider: SurfaceProvider): void {
             { key: 'name', type: 'string', label: 'Name', description: null, required: true, default: null, placeholder: 'My Canvas' },
           ],
         },
-        // Returns a plain { id, name }, not a declared output schema; runs in this
-        // surface daemon (the default realm), stated explicitly.
+        // Returns a plain { id, name }, not a declared output schema. The action's
+        // realm is simply the bundle that holds its closure — this surface daemon —
+        // not a field it declares.
         output: null,
-        realm: null,
         async run(_ctx, input) {
           const args = (input ?? {}) as { name?: string };
           const name = String(args.name ?? '').trim();
@@ -213,7 +213,7 @@ export function register(surfaceProvider: SurfaceProvider): void {
     color: '#6366f1',
     // Runs on any surface; no capability floor.
     requires: null,
-    mount(host: ExtensionHost) {
+    mount(host: ViewHost) {
       initCanvas(host.store);
       root = createRoot(host.container);
       root.render(<CanvasApp host={host} />);
