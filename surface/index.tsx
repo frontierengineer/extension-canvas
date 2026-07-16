@@ -5,7 +5,7 @@ import { ExtensionSidebar, Split } from '@frontierengineer/ui';
 // heavy modules (Monaco/FileBrowser) esbuild can't tree-shake, which would bloat
 // this lean extension by megabytes. The subpath pulls only the action machinery.
 import { ActionButton } from '@frontierengineer/ui/useAction';
-import type { SurfaceProvider, ViewHost } from '../../types';
+import type { SurfaceProvider, SurfaceViewContext } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
 import { initCanvas, useCanvasList, useCanvasListRaw } from './useCanvasStore';
@@ -29,10 +29,10 @@ import './styles.css';
 // ─────────────────────────────────────────────────────────────────────
 
 // The whole Canvas extension. Holds the selected canvas id; the sidebar
-// selects, the main pane renders. `host` is the extension's ViewHost (its
+// selects, the main pane renders. `context` is the extension's SurfaceViewContext (its
 // container, substrate, lifecycle, and the services carrying modals +
 // localSettings).
-function CanvasApp({ host }: { host: ViewHost }) {
+function CanvasApp({ context }: { context: SurfaceViewContext }) {
   const list = useCanvasList((a) => a.list);
   const loaded = useCanvasList((a) => a.loaded);
 
@@ -71,21 +71,21 @@ function CanvasApp({ host }: { host: ViewHost }) {
   useEffect(() => {
     const open = (id: unknown) => {
       if (typeof id !== 'string' || !id) return;
-      host.localSettings.delete('pendingOpen');
+      context.localSettings.delete('pendingOpen');
       void useCanvasListRaw().fetchList().then(() => setSelectedId(id));
     };
-    open(host.localSettings.get('pendingOpen'));
-    const sub = host.bus.extension.subscribe('pendingOpen', open);
+    open(context.localSettings.get('pendingOpen'));
+    const sub = context.bus.extension.subscribe('pendingOpen', open);
     return () => sub.unsubscribe();
-  }, [host]);
+  }, [context]);
 
   // Refresh the canvas list on activation (the user switched here), per the
   // warm-keep lifecycle — a canvas may have been created/deleted elsewhere while
   // this app was hidden.
   useEffect(() => {
-    const sub = host.lifecycle.onActivate(() => { void useCanvasListRaw().fetchList(); });
+    const sub = context.lifecycle.onActivate(() => { void useCanvasListRaw().fetchList(); });
     return () => sub.unsubscribe();
-  }, [host]);
+  }, [context]);
 
   const sidebar = (
     <ExtensionSidebar
@@ -101,7 +101,7 @@ function CanvasApp({ host }: { host: ViewHost }) {
         </ActionButton>
       }
     >
-      <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => host.modals.confirm(o).then((r) => r === true)} />
+      <CanvasSidebar navigate={(p) => select(p)} confirm={(o) => context.modals.confirm(o).then((r) => r === true)} />
     </ExtensionSidebar>
   );
 
@@ -213,10 +213,10 @@ export function register(surfaceProvider: SurfaceProvider): void {
     color: '#6366f1',
     // Runs on any surface; no capability floor.
     requires: null,
-    mount(host: ViewHost) {
-      initCanvas(host.store);
-      root = createRoot(host.container);
-      root.render(<CanvasApp host={host} />);
+    mount(context: SurfaceViewContext) {
+      initCanvas(context.store);
+      root = createRoot(context.container);
+      root.render(<CanvasApp context={context} />);
       return { dispose: () => { root?.unmount(); root = null; } };
     },
   });
