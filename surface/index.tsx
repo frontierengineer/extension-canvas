@@ -5,7 +5,7 @@ import { ExtensionSidebar, Split } from '@frontierengineer/ui';
 // heavy modules (Monaco/FileBrowser) esbuild can't tree-shake, which would bloat
 // this lean extension by megabytes. The subpath pulls only the action machinery.
 import { ActionButton } from '@frontierengineer/ui/useAction';
-import type { SurfaceProvider, SurfaceViewContext } from '../../types';
+import type { SurfaceProvider, SurfaceApplicationContext } from '../../types';
 import { CanvasView } from './components/CanvasView';
 import { CanvasSidebar } from './components/CanvasSidebar';
 import { initCanvas, useCanvasList, useCanvasListRaw } from './useCanvasStore';
@@ -29,10 +29,10 @@ import './styles.css';
 // ─────────────────────────────────────────────────────────────────────
 
 // The whole Canvas extension. Holds the selected canvas id; the sidebar
-// selects, the main pane renders. `context` is the extension's SurfaceViewContext (its
+// selects, the main pane renders. `context` is the extension's SurfaceApplicationContext (its
 // container, substrate, lifecycle, and the services carrying modals +
 // localSettings).
-function CanvasApp({ context }: { context: SurfaceViewContext }) {
+function CanvasApp({ context }: { context: SurfaceApplicationContext }) {
   const list = useCanvasList((a) => a.list);
   const loaded = useCanvasList((a) => a.loaded);
 
@@ -213,7 +213,7 @@ export function register(surfaceProvider: SurfaceProvider): void {
     color: '#6366f1',
     // Runs on any surface; no capability floor.
     requires: null,
-    mount(context: SurfaceViewContext) {
+    mount(context: SurfaceApplicationContext) {
       initCanvas(context.store);
       root = createRoot(context.container);
       root.render(<CanvasApp context={context} />);
