@@ -3,7 +3,15 @@
   "defaultColor": "#6366f1",
   "description": "An infinite zoomable whiteboard of draggable post-its and colored areas for spatial planning and freeform notes.",
   "realms": {
-    "surface": { "applications": ["canvas"], "sidebars": [], "daemon": true },
+    "surface": {
+      "applications": [
+        "canvas"
+      ],
+      "sidebars": [],
+      "daemons": [
+        "canvas"
+      ]
+    },
     "host": null,
     "worker": null
   }

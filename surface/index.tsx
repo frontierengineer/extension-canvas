@@ -150,7 +150,8 @@ export function register(surfaceProvider: SurfaceProvider): void {
   // The DAEMON: the always-on headless component that hosts the extension's
   // background logic — it seeds the canvas store from its own context and
   // declares the create action, whose closure lives here.
-  surface.daemon.register({
+  surface.daemons.register({
+    id: 'canvas',
     mount(ctx) {
       initCanvas(ctx.store);
 
