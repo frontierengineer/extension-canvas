@@ -7,7 +7,7 @@ const metaKey = (id: string) => `canvases/${id}/meta.json`;
 
 async function readMeta(store: Store, id: string): Promise<CanvasMeta | null> {
   const r = await store.getJson<Partial<CanvasMeta>>(metaKey(id));
-  if (!r.ok) throw new Error(r.error.message);
+  if (!r.ok) throw new Error(r.error);
   if (r.value === null) return null;
   return { name: r.value.name || id };
 }
@@ -18,7 +18,7 @@ async function writeMeta(store: Store, id: string, meta: CanvasMeta): Promise<vo
 
 async function readLayout(store: Store, id: string): Promise<CanvasLayout> {
   const r = await store.getJson<Partial<CanvasLayout>>(layoutKey(id));
-  if (!r.ok) throw new Error(r.error.message);
+  if (!r.ok) throw new Error(r.error);
   if (r.value === null) return { ...DEFAULT_CANVAS_LAYOUT };
   const parsed = r.value;
   return {

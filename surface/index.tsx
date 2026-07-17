@@ -83,7 +83,7 @@ function CanvasApp({ context }: { context: SurfaceViewContext }) {
   // warm-keep lifecycle — a canvas may have been created/deleted elsewhere while
   // this app was hidden.
   useEffect(() => {
-    const sub = context.lifecycle.onActivate(() => { void useCanvasListRaw().fetchList(); });
+    const sub = context.lifecycle.onFocus(() => { void useCanvasListRaw().fetchList(); });
     return () => sub.unsubscribe();
   }, [context]);
 
