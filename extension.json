@@ -11,8 +11,6 @@
       "daemons": [
         "canvas"
       ]
-    },
-    "host": null,
-    "worker": null
+    }
   }
 }
